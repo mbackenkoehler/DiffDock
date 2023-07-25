@@ -11,7 +11,7 @@ from torch_geometric.loader import DataLoader
 
 from datasets.process_mols import write_mol_with_coords
 from utils.diffusion_utils import t_to_sigma as t_to_sigma_compl, get_t_schedule
-from utils.inference_utils import InferenceDataset, set_nones
+from utils.inference_utils import InferenceDataset, set_nones, ligand_to_pocket_center
 from utils.sampling import randomize_position, sampling
 from utils.utils import get_model
 from utils.visualise import PDBFile
@@ -39,6 +39,8 @@ parser.add_argument('--batch_size', type=int, default=32, help='')
 parser.add_argument('--no_final_step_noise', action='store_true', default=False, help='Use no noise in the final step of the reverse diffusion')
 parser.add_argument('--inference_steps', type=int, default=20, help='Number of denoising steps')
 parser.add_argument('--actual_steps', type=int, default=None, help='Number of denoising steps that are actually performed')
+
+parser.add_argument('--binding_site_residues', type=str, default=None, help='Path to a file containing a comma-separated list of pocket residue numbers')
 args = parser.parse_args()
 
 os.makedirs(args.out_dir, exist_ok=True)
@@ -49,6 +51,12 @@ if args.confidence_model_dir is not None:
         confidence_args = Namespace(**yaml.full_load(f))
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+if args.binding_site_residues is not None:
+    with open(args.binding_site_residues, 'r') as f:
+        pocket = list(map(int,f.read().split(',')))
+else:
+    pocket = None
 
 if args.protein_ligand_csv is not None:
     df = pd.read_csv(args.protein_ligand_csv)
@@ -131,6 +139,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)):
         else:
             confidence_data_list = None
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
+        ligand_to_pocket_center(data_list, pocket)
         randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.tr_sigma_max)
         lig = orig_complex_graph.mol[0]
 
